@@ -3,11 +3,18 @@ package main
 import (
 	"flag"
 	"fmt"
-	"go/parser"
+	"io/ioutil"
 	"os"
+
+	"github.com/suzuito/suzuitoql"
 )
 
 func main() {
+	// main1()
+	main2()
+}
+
+func main1() {
 	expr := ""
 	flag.StringVar(&expr, "expr", "", "")
 	flag.Parse()
@@ -18,9 +25,23 @@ func main() {
 		os.Exit(1)
 	}
 
-	root, err := parser.ParseExpr(expr)
+	_, err := suzuitoql.GenerateFilterFromString(expr)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "Cannot ParseExpr %s : %+v\n", expr, err)
+		fmt.Fprintf(os.Stderr, "%+v\n", err)
+		os.Exit(1)
 	}
-	fmt.Println(root)
+}
+
+func main2() {
+	body, err := ioutil.ReadFile("b.txt")
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "%+v\n", err)
+		os.Exit(1)
+	}
+	filter, err := suzuitoql.GenerateFilterFromString(string(body))
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "%+v\n", err)
+		os.Exit(1)
+	}
+	fmt.Println(filter)
 }
