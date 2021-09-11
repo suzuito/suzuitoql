@@ -34,6 +34,7 @@ func main1() {
 
 func main2() {
 	body, err := ioutil.ReadFile("b.txt")
+	// body, err := ioutil.ReadFile("c.txt")
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "%+v\n", err)
 		os.Exit(1)
@@ -43,5 +44,5 @@ func main2() {
 		fmt.Fprintf(os.Stderr, "%+v\n", err)
 		os.Exit(1)
 	}
-	fmt.Println(filter)
+	fmt.Printf("====\nResult %+v\n", filter)
 }
