@@ -14,61 +14,6 @@ import (
 	"golang.org/x/xerrors"
 )
 
-type Filter struct{}
-
-type visitorExpression struct {
-	Err   error
-	Stack []ast.Node
-	nodes []ast.Node
-}
-
-func (v *visitorExpression) Visit(current ast.Node) ast.Visitor {
-	if current != nil {
-		// Process after entered
-		v.nodes = append(v.nodes, current)
-		return v
-	}
-	// Process before exited
-	if err := appendNode(v); err != nil {
-		v.Err = err
-		return nil
-	}
-	return nil
-}
-
-func appendNode(visitor *visitorExpression) error {
-	if len(visitor.nodes) < 1 {
-		return nil
-	}
-	var current ast.Node
-	current, visitor.nodes = visitor.nodes[len(visitor.nodes)-1], visitor.nodes[:len(visitor.nodes)-1]
-	// fmt.Printf("onExit: %+v\n", current)
-
-	switch n := current.(type) {
-	case *ast.BinaryExpr:
-		// fmt.Printf("Bin : %v %s %v\n", n.X, n.Op, n.Y)
-		if n.Op != token.LAND && n.Op != token.LOR {
-			return xerrors.Errorf("Unsupported op: %s", n.Op)
-		}
-		visitor.Stack = append(visitor.Stack, n)
-		return nil
-	case *ast.BasicLit:
-		// fmt.Printf("Lit : %s %s\n", n.Kind, n.Value)
-		visitor.Stack = append(visitor.Stack, n)
-		return nil
-	case *ast.CallExpr:
-		// fmt.Printf("Call: %s %v\n", n.Fun, n.Args)
-		visitor.Stack = append(visitor.Stack, n)
-		return nil
-	case *ast.Ident:
-		if n.Name == "true" || n.Name == "false" {
-			visitor.Stack = append(visitor.Stack, n)
-		}
-		return nil
-	}
-	return nil
-}
-
 var newlineRegexp = regexp.MustCompile(`\r?\n`)
 
 func GenerateFilterFromString(expr string) (*Filter, error) {
@@ -95,36 +40,13 @@ func GenerateFilter(source []byte, root ast.Expr) (*Filter, error) {
 	if err != nil {
 		return nil, xerrors.Errorf(": %w", err)
 	}
-	fmt.Println("====")
-	for _, elem := range *elems {
-		fmt.Printf("%s\n", elem.String())
-	}
-	fmt.Println("====")
-	if err := eval(nil, elems, &EvaluatorImpl{}); err != nil {
-		return nil, xerrors.Errorf(": %w", err)
-	}
-	fmt.Println("====")
-	return nil, visitor.Err
-}
-
-func validateFilter(v interface{}) error {
-	t := reflect.TypeOf(v)
-	if t.Kind() != reflect.Func {
-		return fmt.Errorf("ErrInvalidFilter: Not function")
-	}
-	if t.NumIn() < 1 {
-		return fmt.Errorf("ErrInvalidFilter: Number of arguments must be larger than 1")
-	}
-	if t.In(0).String() != "*entities.Topic" {
-		return fmt.Errorf("ErrInvalidFilter: Arg0 is not *entities.Topic")
-	}
-	if t.NumOut() != 1 {
-		return fmt.Errorf("ErrInvalidFilter: Number of return values must be 1")
-	}
-	if t.Out(0).Kind() != reflect.Bool {
-		return fmt.Errorf("ErrInvalidFilter: Return value must be bool")
-	}
-	return nil
+	// fmt.Println("====")
+	// for _, elem := range *elems {
+	// fmt.Printf("%s\n", elem.String())
+	// }
+	return &Filter{
+		elems: elems,
+	}, visitor.Err
 }
 
 type visitorExpression2 struct {
@@ -165,31 +87,31 @@ func (v *visitorExpression2) onExit(current ast.Node) error {
 			return xerrors.Errorf("Unsupported BinaryExpr: %s", n.Op)
 		}
 		v.Stack = append(v.Stack, current)
-		fmt.Printf("BinaryExpr %+v\n", n)
+		// fmt.Printf("BinaryExpr %+v\n", n)
 	case *ast.BasicLit:
 		// fmt.Printf("Lit : %s %s\n", n.Kind, n.Value)
 		if n.Kind != token.STRING && n.Kind != token.INT && n.Kind != token.FLOAT {
 			return xerrors.Errorf("Unsupported BasecLit : %s %s", n.Kind, n.Value)
 		}
 		v.Stack = append(v.Stack, current)
-		fmt.Printf("BasicLit %+v\n", n)
+		// fmt.Printf("BasicLit %+v\n", n)
 	case *ast.UnaryExpr:
 		if n.Op != token.SUB {
 			return xerrors.Errorf("Unsupported UnaryExpr : %s %s", n.Op)
 		}
 		v.Stack = append(v.Stack, current)
-		fmt.Printf("UnaryExpr %+v\n", n)
+		// fmt.Printf("UnaryExpr %+v\n", n)
 	case *ast.CallExpr:
 		// fmt.Printf("Call: %s %v\n", n.Fun, n.Args)
 		v.Stack = append(v.Stack, current)
-		fmt.Printf("CallExpr %+v\n", n)
+		// fmt.Printf("CallExpr %+v\n", n)
 	case *ast.Ident:
 		if n.String() == "true" || n.String() == "false" {
 			v.Stack = append(v.Stack, current)
 		}
-		fmt.Printf("Ident %+v\n", n)
+		// fmt.Printf("Ident %+v\n", n)
 	default:
-		fmt.Printf("%s %+v\n", reflect.TypeOf(n), n)
+		// fmt.Printf("%s %+v\n", reflect.TypeOf(n), n)
 	}
 	return nil
 }
@@ -332,7 +254,7 @@ func newElement(source []byte, node ast.Node) (*element, error) {
 		if n.Kind == token.STRING {
 			return &element{
 				Type:        elementTypeLitString,
-				ValueString: n.Value,
+				ValueString: strings.TrimSuffix(strings.TrimPrefix(n.Value, `"`), `"`),
 			}, nil
 		}
 		if n.Kind == token.INT {
@@ -387,18 +309,21 @@ func newElement(source []byte, node ast.Node) (*element, error) {
 	return nil, xerrors.Errorf("Unsupported %s : %+v", reflect.TypeOf(node), node)
 }
 
-func eval(
-	input interface{},
-	elems *elements,
+type Filter struct {
+	elems *elements
+}
+
+func (f *Filter) Eval(
 	evaluator Evaluator,
-) error {
+) (bool, error) {
 	stack := elements{}
-	for i := range *elems {
-		elem := (*elems)[i]
-		fmt.Println("> ----")
-		aaa := (*elems)[i:]
-		fmt.Println(aaa.String())
-		fmt.Println(stack.String())
+	// fmt.Println("Start")
+	for i := range *f.elems {
+		elem := (*f.elems)[i]
+		// fmt.Println("> ----")
+		// aaa := (*f.elems)[i:]
+		// fmt.Println(aaa.String())
+		// fmt.Println(stack.String())
 		switch elem.Type {
 		case elementTypeLitString:
 			stack = append(stack, elem)
@@ -410,7 +335,7 @@ func eval(
 			stack = append(stack, elem)
 		case elementTypeOpBinAnd, elementTypeOpBinOr:
 			if len(stack) < 2 {
-				return xerrors.Errorf("Stack must be larger than 2 for %s op", elem.Type)
+				return false, xerrors.Errorf("Stack must be larger than 2 for %s op", elem.Type)
 			}
 			args := elements{
 				stack[len(stack)-2],
@@ -423,7 +348,7 @@ func eval(
 			case elementTypeOpBinAnd:
 				bresult, err := evalAnd(&args[0], &args[1], evaluator)
 				if err != nil {
-					return xerrors.Errorf(": %w", err)
+					return false, xerrors.Errorf(": %w", err)
 				}
 				result = &element{
 					Type:      elementTypeLitBool,
@@ -432,26 +357,26 @@ func eval(
 			case elementTypeOpBinOr:
 				bresult, err := evalOr(&args[0], &args[1], evaluator)
 				if err != nil {
-					return xerrors.Errorf(": %w", err)
+					return false, xerrors.Errorf(": %w", err)
 				}
 				result = &element{
 					Type:      elementTypeLitBool,
 					ValueBool: bresult,
 				}
 			default:
-				return xerrors.Errorf("Unsupport op %+v", elem.Type)
+				return false, xerrors.Errorf("Unsupport op %+v", elem.Type)
 			}
 			stack = append(stack, *result)
 		case elementTypeOpMinus:
 			if len(stack) < 1 {
-				return xerrors.Errorf("Stack must be larger than 1 for %s op", elem.Type)
+				return false, xerrors.Errorf("Stack must be larger than 1 for %s op", elem.Type)
 			}
 			args := elements{
 				stack[len(stack)-1],
 			}
 			stack = stack[:len(stack)-1]
 			if args[0].Type != elementTypeLitInt && args[0].Type != elementTypeLitFloat {
-				return xerrors.Errorf("Cannot apply minus for %+v", args[0])
+				return false, xerrors.Errorf("Cannot apply minus for %+v", args[0])
 			}
 			stack = append(stack, element{
 				Type:       args[0].Type,
@@ -460,24 +385,21 @@ func eval(
 			})
 		case elementTypeOpFunc:
 			if len(stack) < elem.FuncArgs {
-				return xerrors.Errorf("Stack must be larger than %d for function", elem.FuncArgs)
+				return false, xerrors.Errorf("Stack must be larger than %d for function", elem.FuncArgs)
 			}
 			args := elements{}
 			for i := 0; i < elem.FuncArgs; i++ {
-				// fmt.Println(len(stack) - elem.FuncArgs + i)
-				// fmt.Println(stack[len(stack)-elem.FuncArgs+i])
 				args = append(args, stack[len(stack)-elem.FuncArgs+i])
 			}
 			stack = stack[:len(stack)-elem.FuncArgs]
-			// FIXME 続きはここから
-			result, err := evaluator.Eval(elem.FuncName, args...)
+			result, err := evalFunc(evaluator, elem.FuncName, args...)
 			if err != nil {
-				return xerrors.Errorf(": %w", err)
+				return false, xerrors.Errorf(": %w", err)
 			}
 			stack = append(stack, *result)
 		}
 	}
-	return nil
+	return stack[0].ValueBool, nil
 }
 
 func evalAnd(
@@ -529,37 +451,14 @@ func evalElement(
 	return false, xerrors.Errorf("Cannot eval %s", v.Type)
 }
 
-type Evaluator interface {
-	Eval(funcName string, args ...element) (result *element, err error)
-
-	EvalFloat(v float64) (result bool, err error)
-	EvalInt(v int64) (result bool, err error)
-	EvalString(v string) (result bool, err error)
-}
-
-type EvaluatorImpl struct {
-}
-
-func (e *EvaluatorImpl) EvalFloat(v float64) (result bool, err error) {
-	return false, nil
-}
-
-func (e *EvaluatorImpl) EvalInt(v int64) (result bool, err error) {
-	return true, nil
-}
-
-func (e *EvaluatorImpl) EvalString(v string) (result bool, err error) {
-	return true, nil
-}
-
-func (e *EvaluatorImpl) Eval(funcName string, args ...element) (result *element, err error) {
-	et := reflect.TypeOf(e)
+func evalFunc(evaluator Evaluator, funcName string, args ...element) (result *element, err error) {
+	et := reflect.TypeOf(evaluator)
 	method, exists := et.MethodByName(funcName)
 	if !exists {
 		return nil, xerrors.Errorf("Method is not found '%s'", funcName)
 	}
 	values := []reflect.Value{
-		reflect.ValueOf(e),
+		reflect.ValueOf(evaluator),
 	}
 	for i, arg := range args {
 		v, err := arg.Value()
@@ -570,10 +469,10 @@ func (e *EvaluatorImpl) Eval(funcName string, args ...element) (result *element,
 				funcName,
 			)
 		}
-		fmt.Printf("%s\n", v)
+		// fmt.Printf("%s\n", v)
 		values = append(values, v)
 	}
-	fmt.Printf("%+v\n", method)
+	// fmt.Printf("%+v\n", method)
 	results := method.Func.Call(values)
 	if len(results) != 2 {
 		return nil, xerrors.Errorf(
@@ -584,15 +483,14 @@ func (e *EvaluatorImpl) Eval(funcName string, args ...element) (result *element,
 	valueResult := results[0]
 	valueErr := results[1]
 	if !valueErr.IsNil() {
+		// FIXME
 		return nil, xerrors.Errorf("Not impl")
 	}
 	return newElementByValue(valueResult)
 }
 
-func (e *EvaluatorImpl) And(a, b string) (result bool, err error) {
-	return true, nil
-}
-
-func (e *EvaluatorImpl) Or(a, b string) (result bool, err error) {
-	return true, nil
+type Evaluator interface {
+	EvalFloat(v float64) (result bool, err error)
+	EvalInt(v int64) (result bool, err error)
+	EvalString(v string) (result bool, err error)
 }
