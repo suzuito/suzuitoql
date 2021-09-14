@@ -7,27 +7,12 @@ import (
 	"strings"
 
 	"github.com/suzuito/suzuitoql"
-	"github.com/suzuito/suzuitoql/filterimpl"
+	"github.com/suzuito/suzuitoql/evalimpl"
 )
 
 func main() {
 	// main2()
 	main3()
-}
-
-type EvaluatorImpl struct {
-}
-
-func (e *EvaluatorImpl) EvalFloat(v float64) (result bool, err error) {
-	return false, nil
-}
-
-func (e *EvaluatorImpl) EvalInt(v int64) (result bool, err error) {
-	return true, nil
-}
-
-func (e *EvaluatorImpl) EvalString(v string) (result bool, err error) {
-	return true, nil
 }
 
 // func main2() {
@@ -59,15 +44,17 @@ func main3() {
 	rows := strings.Split(string(all), "\n")
 
 	filter, err := suzuitoql.GenerateFilterFromString(`
-	("ゴーシュ" && "われわれは下手") || ("ゴーシュ" && Not("ねずみ"))
+	("ゴーシュ" && "われわれは下手")
+	||
+	("ゴーシュ" && Not("ねずみ"))
 	`)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "%+v\n", err)
 		os.Exit(1)
 	}
-	evaluator := filterimpl.FilterText{}
+	evaluator := evalimpl.EvaluatorText{}
 	for _, row := range rows {
-		evaluator.Text = row
+		evaluator.Init(row)
 		result, err := filter.Eval(&evaluator)
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "%+v\n", err)

@@ -40,10 +40,6 @@ func GenerateFilter(source []byte, root ast.Expr) (*Filter, error) {
 	if err != nil {
 		return nil, xerrors.Errorf(": %w", err)
 	}
-	// fmt.Println("====")
-	// for _, elem := range *elems {
-	// fmt.Printf("%s\n", elem.String())
-	// }
 	return &Filter{
 		elems: elems,
 	}, visitor.Err
@@ -87,31 +83,23 @@ func (v *visitorExpression2) onExit(current ast.Node) error {
 			return xerrors.Errorf("Unsupported BinaryExpr: %s", n.Op)
 		}
 		v.Stack = append(v.Stack, current)
-		// fmt.Printf("BinaryExpr %+v\n", n)
 	case *ast.BasicLit:
-		// fmt.Printf("Lit : %s %s\n", n.Kind, n.Value)
 		if n.Kind != token.STRING && n.Kind != token.INT && n.Kind != token.FLOAT {
 			return xerrors.Errorf("Unsupported BasecLit : %s %s", n.Kind, n.Value)
 		}
 		v.Stack = append(v.Stack, current)
-		// fmt.Printf("BasicLit %+v\n", n)
 	case *ast.UnaryExpr:
 		if n.Op != token.SUB {
 			return xerrors.Errorf("Unsupported UnaryExpr : %s %s", n.Op)
 		}
 		v.Stack = append(v.Stack, current)
-		// fmt.Printf("UnaryExpr %+v\n", n)
 	case *ast.CallExpr:
-		// fmt.Printf("Call: %s %v\n", n.Fun, n.Args)
 		v.Stack = append(v.Stack, current)
-		// fmt.Printf("CallExpr %+v\n", n)
 	case *ast.Ident:
 		if n.String() == "true" || n.String() == "false" {
 			v.Stack = append(v.Stack, current)
 		}
-		// fmt.Printf("Ident %+v\n", n)
 	default:
-		// fmt.Printf("%s %+v\n", reflect.TypeOf(n), n)
 	}
 	return nil
 }
@@ -317,13 +305,8 @@ func (f *Filter) Eval(
 	evaluator Evaluator,
 ) (bool, error) {
 	stack := elements{}
-	// fmt.Println("Start")
 	for i := range *f.elems {
 		elem := (*f.elems)[i]
-		// fmt.Println("> ----")
-		// aaa := (*f.elems)[i:]
-		// fmt.Println(aaa.String())
-		// fmt.Println(stack.String())
 		switch elem.Type {
 		case elementTypeLitString:
 			stack = append(stack, elem)
@@ -469,10 +452,8 @@ func evalFunc(evaluator Evaluator, funcName string, args ...element) (result *el
 				funcName,
 			)
 		}
-		// fmt.Printf("%s\n", v)
 		values = append(values, v)
 	}
-	// fmt.Printf("%+v\n", method)
 	results := method.Func.Call(values)
 	if len(results) != 2 {
 		return nil, xerrors.Errorf(
